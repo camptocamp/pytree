@@ -1,17 +1,15 @@
 version: "3.8"
-
 services:
   api:
     image: pytree:0.0.1
     environment:
       DEPLOY_ENV: ${DEPLOY_ENV:-DEV}
     restart: unless-stopped
-    build:
-      context: .
-      dockerfile: Dockerfile
-      network: host
-    command: /app/start_server.sh
+    build: .
     volumes:
-      - "${DATA_DIR}:/app/data/processed"
+      - "${DATA_DIR:-processed}:/app/data/processed"
     ports:
-      - "${PORT:-6001}:5000"
+      - "${PORT:-5000}:5000"
+
+volumes:
+  processed:

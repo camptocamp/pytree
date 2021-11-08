@@ -1,23 +1,23 @@
-FROM python:3.9.1-slim-buster
+FROM python:3.9.1-slim
 
-WORKDIR /app
+RUN groupadd -r pytree && useradd -r -m -g pytree pytree
 
-RUN echo 'deb http://deb.debian.org/debian testing main' >> /etc/apt/sources.list \
-  && apt-get update \
-  && apt-get -y install build-essential pkg-config nano curl wget unzip \
-  && apt-get -y install sqlite3 libsqlite3-dev libtiff5 libtiff5-dev libcurl4-openssl-dev libhdf5-dev \
-  && apt-get -y install libtbb2 libtbb-dev \
-  && apt-get -y install gcc-9-base gcc-9 g++-9 libstdc++-9-dev \
-  && apt-get -y install proj-bin gdal-bin libproj-dev libgdal-dev \
-  && apt-get -y autoremove --purge && apt-get -y autoclean
+USER pytree
+# Sane defaults for pip
+ENV PIP_NO_CACHE_DIR=1 \
+  PIP_DISABLE_PIP_VERSION_CHECK=1 \
+  HOME=/home/pytree \
+  PATH=$PATH:$HOME/.local/bin
+WORKDIR $HOME
 
-COPY . ./
+COPY --chown=pytree:pytree . ./
+USER root
 
-RUN chmod +x ./start_server.sh \
-  && python -m pip install --upgrade pip \
-  && pip3 install -r requirements.txt \
-  && mv ./bin/extract_profile /usr/local/bin/ && chmod +x /usr/local/bin/extract_profile \
-  && mv ./bin/liblaszip.so /usr/local/lib && chmod +x /usr/local/lib/liblaszip.so && ldconfig \
-  && echo "alias ll='ls -lArth'" >> ~/.bashrc && /bin/bash -c "source ~/.bashrc" \
-  && echo "Image succcessfully build!"
+RUN   mv ./bin/extract_profile /usr/local/bin/ \
+  && mv ./bin/liblaszip.so /usr/local/lib/ \
+  && ldconfig
 
+RUN echo $PATH
+RUN pip3 install -r requirements.txt
+
+CMD ["./start_server.sh"]
