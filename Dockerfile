@@ -1,6 +1,9 @@
 FROM python:3.9-slim
 
 RUN groupadd -r pytree && useradd -r -m -g pytree pytree
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends libtbb2 \
+    && rm -rf /var/lib/apt/lists/*
 
 USER pytree
 # Sane defaults for pip
@@ -11,9 +14,9 @@ ENV PATH=$PATH:$HOME/.local/bin
 WORKDIR $HOME
 
 COPY --chown=pytree:pytree . ./
-USER root
 
-RUN mv ./bin/extract_profile /usr/local/bin/ \
+USER root
+RUN cp ./bin/extract_profile /usr/local/bin/ \
   && mv ./bin/liblaszip.so /usr/local/lib/ \
   && ldconfig
 
