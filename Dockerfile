@@ -1,47 +1,72 @@
-FROM ubuntu:22.04 AS compiler
-LABEL maintainer SITN "sitn@ne.ch" 
+FROM ubuntu:22.04 AS cpotree
 
-WORKDIR /tmp
+RUN --mount=type=cache,target=/var/lib/apt/lists \
+  --mount=type=cache,target=/var/cache,sharing=locked \
+  apt-get update \
+  && apt-get install --assume-yes build-essential git cmake python3 \
+  zlib1g-dev libssl-dev libcurlpp-dev
 
-ENV DEBIAN_FRONTEND=noninteractive
+WORKDIR /opt/
 
-RUN apt-get update \
-  && apt-get upgrade --assume-yes \
-  && apt-get install --assume-yes build-essential cmake git
+RUN git clone --recurse-submodules https://github.com/aws/aws-sdk-cpp.git \
+    && cd aws-sdk-cpp \
+	&& git checkout 1.11.205
 
-RUN git clone https://github.com/potree/CPotree.git \
-  && cd CPotree \
-  && mkdir build \
-  && cd build \
-  && cmake -Wno-deprecated --log-level=ERROR ../ \
-  && make
+WORKDIR /opt/aws-sdk-cpp/build
 
-#######################################################################################################################
+RUN --mount=type=cache,target=/opt/aws-sdk-cpp/build \
+  cmake .. -DCMAKE_TOOLCHAIN_FILE=../toolchains/gcc-c++20.cmake -DBUILD_ONLY="s3" \
+  && cmake --build . \
+  && cmake --install .
+
+WORKDIR /opt
+
+RUN --mount=type=cache,target=/var/lib/apt/lists \
+  --mount=type=cache,target=/var/cache,sharing=locked \
+  apt-get update \
+  && apt-get install --assume-yes curl
+
+RUN git clone --branch=aws --depth=1 https://github.com/camptocamp/CPotree.git
+
+WORKDIR /opt/CPotree/build
+
+RUN --mount=type=cache,target=/opt/CPotree/build \
+  cmake .. -DWITH_AWS_SDK=ON -DCMAKE_BUILD_TYPE=Debug \
+  && make \
+  && cp extract_profile /usr/local/bin/ \
+  && cp liblaszip.so /usr/local/lib/
+
+
+#######################################################################################################
 
 FROM ubuntu:22.04 as runner
 
 ENV PIP_ROOT_USER_ACTION=ignore
 
-RUN apt-get update \
+RUN --mount=type=cache,target=/var/lib/apt/lists \
+  --mount=type=cache,target=/var/cache,sharing=locked \
+  apt-get update \
   && apt-get upgrade --assume-yes \
-  && apt-get install --assume-yes python3 python-is-python3 python3-pip \
-  && apt-get -y autoremove --purge && apt-get -y autoclean
+  && apt-get install --assume-yes --no-install-recommends python3 python-is-python3 python3-pip libcurlpp-dev
 
 WORKDIR /app
 
-COPY requirements.txt requirements.txt
+COPY requirements.txt ./
 
 RUN pip3 install -r requirements.txt
 
+RUN --mount=type=cache,target=/var/lib/apt/lists \
+  --mount=type=cache,target=/var/cache,sharing=locked \
+  apt-get update \
+  && apt-get install --assume-yes gdb
+
 COPY . /app
 
-COPY --from=compiler /tmp/CPotree/build/extract_profile /usr/local/bin
-COPY --from=compiler /tmp/CPotree/build/liblaszip.so /usr/local/lib
+COPY --from=cpotree /usr/local/lib/libaws-cpp-sdk-core.so /usr/local/lib/
+COPY --from=cpotree /usr/local/lib/libaws-cpp-sdk-s3.so /usr/local/lib/
+COPY --from=cpotree /usr/local/bin/extract_profile /usr/local/bin/
+COPY --from=cpotree /usr/local/lib/liblaszip.so /usr/local/lib/
 
-RUN chmod +x ./start_server.sh \
-  && chmod +x /usr/local/bin/extract_profile \
-  && chmod +x /usr/local/lib/liblaszip.so \
-  && ldconfig
+ENV LD_LIBRARY_PATH=/usr/local/lib
 
-ENV PYTHONUNBUFFERED=1
-
+CMD ["gunicorn", "--config=gunicorn_config.py", "wsgi:app"]

@@ -1,5 +1,7 @@
-*.pyc
-data/
-profile/
-pytree.yml
-
+*
+!pytree
+!gunicorn_config.py
+!requirements.txt
+!setup.py
+!start_server.sh
+!wsgi.py
